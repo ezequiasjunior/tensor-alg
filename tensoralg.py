@@ -53,7 +53,8 @@ def kron(mt_a, mt_b):
 
     # Computing the Kronecker product using Numpy broadcasting:
     # it is returned a 4-D array (M x I x  N x J)
-    mt_out = mt_a[:, None, :, None] * mt_b[None, :, None, :]
+    mt_out = mt_a[:, np.newaxis, :, np.newaxis] *\
+             mt_b[np.newaxis, :, np.newaxis, :]
 
     # Applying the reshape to get the expected dimension of the 
     # product (MI x NJ):
@@ -85,7 +86,9 @@ def kr(mt_a, mt_b):
     ncol = mt_a.shape[1]
 
     # Calculating the product: it is returned a 3-D array i x k x j
-    mt_out = np.einsum('ij, kj-> ikj', mt_a, mt_b)
+    # mt_out = np.einsum('ij, kj-> ikj', mt_a, mt_b)
+    # to save some micro seconds:
+    mt_out = mt_a[:, np.newaxis, :] * mt_b
 
     # Applying the reshape to get the expected dimension of the product (ixk,j):
     return mt_out.reshape((-1, ncol))
