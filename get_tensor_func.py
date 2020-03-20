@@ -1,5 +1,6 @@
 import numpy as np
 
+# Transform this file in a simulation module... to simplify the notebooks...
 
 def my_unfold(tensor, mode):
     '''
