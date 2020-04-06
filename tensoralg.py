@@ -7,7 +7,7 @@
 # tensor toolbox.
 #-------------------------------------------------
 ## Author: Ezequias Júnior
-## Version: 0.4.1
+## Version: 0.4.2
 ## Email: ezequiasjunio@gmail.com
 ## Status: in development
 
@@ -238,12 +238,12 @@ def lskrf(mt_x, nrow_a, nrow_b):
     else: # 'A' = column-major indexes
         target = mt_x.T.reshape(ncol, nrow_b, nrow_a, order='A')
     
-    # Calculating the SVD of each X_p matrix:
-    u, sigma, v = np.linalg.svd(target)
+    # Calculating the SVD of each X_p matrix: U \Sigma V^{H}
+    u, sigma, vh = np.linalg.svd(target)
     
     # Filling the columns of mt_a and mt_b with the respective rank-1 approx.:
     for p in range(ncol): 
-        mt_a[:, p] = np.sqrt(sigma[p, 0]) * v[p, 0, :].conj()
+        mt_a[:, p] = np.sqrt(sigma[p, 0]) * vh[p, 0, :]
         mt_b[:, p] = np.sqrt(sigma[p, 0]) * u[p, :, 0]
 
     return mt_a, mt_b
@@ -274,11 +274,11 @@ def lskronf(mt_x, shape_a, shape_b):
     # Constructing the rank-1 matrix X_tilde:
     target = extract_block(mt_x, shape_a, shape_b)
 
-    # Calculating the SVD of X_tilde:
-    u, sigma, v = np.linalg.svd(target)
+    # Calculating the SVD of X_tilde: U \Sigma V^{H}
+    u, sigma, vh = np.linalg.svd(target)
 
     # Calculating mt_a and mt_b as the  best rank-1 approximation:
-    mt_a = unvec(np.sqrt(sigma[0]) * v[0, :].conj(), *shape_a)
+    mt_a = unvec(np.sqrt(sigma[0]) * vh[0, :], *shape_a)
     mt_b = unvec(np.sqrt(sigma[0]) * u[:, 0], *shape_b)   
 
     return mt_a, mt_b

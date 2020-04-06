@@ -5,10 +5,10 @@
 # the Homeworks solutions.
 #-------------------------------------------------
 ## Author: Ezequias Júnior
-## Version: 0.1.0 -> Homeworks 03 and 04
+## Version: 0.1.1 -> Homeworks 03 and 04 complex case
 ## Email: ezequiasjunio@gmail.com
 ## Status: in development
-#%%
+
 # Imports
 import numpy as np
 import tensoralg # Module created for the hw.
@@ -75,8 +75,8 @@ def run_simulation_lskr(snr_db, num_mc, param1, param2, ncol):
     # Monte Carlo Simulation:
     for realization in tnrange(num_mc):
         # Generating matrices:
-        A = rand(param1, ncol)
-        B = rand(param2, ncol)
+        A = rand(param1, ncol).view(np.complex_)
+        B = rand(param2, ncol).view(np.complex_)
         mt_x = tensoralg.kr(A, B)
         for ids, snr in enumerate(snr_db):
             # Applying noise to the matrix X_0:
@@ -84,7 +84,7 @@ def run_simulation_lskr(snr_db, num_mc, param1, param2, ncol):
             # Estimating factor matrices:
             a_hat, b_hat = tensoralg.lskrf(x_noise, param1, param2)
             # Calculating the estimative of X_0:
-            x_hat = tensoralg.kr(a_hat, b_hat) 
+            x_hat = tensoralg.kr(a_hat, b_hat)
             # Calculating the normalized error:
             norm_square_error[realization, ids] = norm_mse(mt_x, x_hat)
     # Returning the NMSE:
@@ -96,8 +96,8 @@ def run_simulation_lskron(snr_db, num_mc, param1, param2):
     # Monte Carlo Simulation:
     for realization in tnrange(num_mc):
         # Generating matrices:
-        A = rand(*param1)
-        B = rand(*param2)
+        A = rand(param1[0], 2*param1[1])
+        B = rand(param2[0], 2*param2[1])
         mt_x = tensoralg.kron(A, B)
         for ids, snr in enumerate(snr_db):
             # Applying noise to the matrix X_0:
@@ -106,29 +106,6 @@ def run_simulation_lskron(snr_db, num_mc, param1, param2):
             a_hat, b_hat = tensoralg.lskronf(x_noise, param1, param2)
             # Calculating the estimative of X_0:
             x_hat = tensoralg.kron(a_hat, b_hat)
-            # Calculating the normalized error:
-            norm_square_error[realization, ids] = norm_mse(mt_x, x_hat)
-    # Returning the NMSE:
-    return norm_square_error.mean(axis=0)
-
-# Complex case simulation.
-def run_simulation_lskron_cp(snr_db, num_mc, param1, param2):
-    # Storing the results:
-    norm_square_error = np.zeros((num_mc, snr_db.size))
-    # Monte Carlo Simulation:
-    for realization in tnrange(num_mc):
-        # Generating matrices:
-        A = rand(param1[0], param1[1]*2).view(np.complex_)
-        B = rand(param2[0], param2[1]*2).view(np.complex_)
-        mt_x = tensoralg.kron(A, B)
-        for ids, snr in enumerate(snr_db):
-            # Applying noise to the matrix X_0:
-            x_noise = apply_noise(snr, mt_x)
-            # Estimating factor matrices: Real and Imag
-            a_hat, b_hat = tensoralg.lskronf(x_noise.real, param1, param2)
-            a_hati, b_hati = tensoralg.lskronf(x_noise.imag, param1, param2)
-            # Calculating the estimative of X_0:
-            x_hat = tensoralg.kron(a_hat, b_hat) + 1j*tensoralg.kron(a_hati, b_hati)
             # Calculating the normalized error:
             norm_square_error[realization, ids] = norm_mse(mt_x, x_hat)
     # Returning the NMSE:
