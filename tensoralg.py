@@ -1,13 +1,13 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
 #-------------------------------------------------
-# Module containing the functions implemented 
+# Module containing the implemented functions  
 # during the Tensor Algebra course. 
-# These functions these functions compose my own 
-# tensor toolbox.
+# These functions are composing my own tensor 
+# toolbox.
 #-------------------------------------------------
 ## Author: Ezequias Júnior
-## Version: 0.4.2
+## Version: 0.5.0
 ## Email: ezequiasjunio@gmail.com
 ## Status: in development
 
@@ -52,7 +52,8 @@ def unvec(vt_x, nrow, ncol):
         Matrix X nrow x ncol. 
     """
     return vt_x.reshape(nrow, ncol, order='F')
-    
+
+
 def extract_block(blkmatrix, shape_a, shape_b):
     """Auxiliary function to extract the blocks of a block matrix constructed 
     by kron(A, B) (MPxNQ) by rearrangig the Kronecker product into a rank 1 
@@ -82,26 +83,69 @@ def extract_block(blkmatrix, shape_a, shape_b):
     # Reshaping into a matrix with each slice as columns (a_ij*vec(B)):    
     return aux.T.reshape(nrow_b*ncol_b, nrow_a*ncol_a)
 
-# TODO:
-# def my_unfold(tensor, mode): 
-#     '''
-#     unfolding of an 3rd order tensor.
 
-#     :param tensor: matriz i x k
-#     :param mode: modo desejado (1, 2 ou 3)
-#     :return : matriz do modo {(i x jk), (j, ik), (k, ij)}
-#     '''
-#     t = tensor.shape
-#     if mode is 1: # i, jk
-#         return np.transpose(tensor, (1,0,2)).reshape(t[mode], int(np.prod(t)/t[mode]))
-#     elif mode is 2: # j, ik
-#         return np.transpose(tensor, (2,0,1)).reshape(t[mode], int(np.prod(t)/t[mode]))
-#     elif mode is 3:# k, ij
-#         # shape 3 ordem = (i0, i1, i2)
-#         return np.transpose(tensor, (0,2,1)).reshape(t[0], int(np.prod(t)/t[0]))
-#     else:
-#         print("Modo não suportado")
-#         return None
+def mode_index(shape_id, mode):
+    """Auxiliary function to permute the indices of the given array in such a 
+    way that the first axis corresponds to the axis of the n-mode dimension.
+    
+    Parameters:
+    -----------
+    shape_id : [1-D array]
+        Indices of the tensor shape vector.
+    mode : [scalar]
+        Selected fiber mode.
+    
+    Returns:
+    --------
+    [1-D array]
+        Reordered axes list.
+    """
+    # Selected mode:
+    if mode == 1:
+        i = 2
+    elif mode == 2:
+        i = 1
+    else:
+        i = mode
+    
+    # Storing the first element:
+    aux = shape_id[0]
+    
+    # Changing positions:
+    shape_id[0] = shape_id[-i]
+    shape_id[-i] = aux
+    
+    # Return the inplace permuted indices:
+    return shape_id
+
+
+def m_mode_prod_shape(tensor, matrix, mode):
+    """Auxiliary function to calculate the new shape of the resulting tensor 
+    for the mode product.
+    
+    Parameters:
+    -----------
+    tensor : [n-D array]
+        Target tensor of the mode product.
+    matrix : [2-D array]
+        Matrix that is applied to the tensor.
+    mode : [scalar]
+        The selected mode.
+    
+    Returns:
+    --------
+    [1-D array]
+        Vector containing the new shape.
+    """
+
+    # Taking the tensor shape:
+    shape = np.asarray(tensor.shape)
+    # Ordering in the notation I_1, ..., I_n:
+    ord_shape = np.hstack([shape[-2:], shape[:-2][::-1]]) 
+    # Assigning the new dimension as the number of rows of the matrix:
+    ord_shape[mode - 1] = matrix.shape[0]
+    # Returning the new shape in Numpy order
+    return np.hstack([ord_shape[2:][::-1], ord_shape[:2]])
 
 
 # Matrix products
@@ -127,7 +171,7 @@ def hadamard(mt_a, mt_b):
     # perform the following nested loop:
     # for i in range(mt_a.shape[0]):
     #     for j in range(mt_a.shape[1]):
-    #         out[i, j] = mt_a[i, j]*mt_b[i, j] 
+    #         out[i, j] = mt_a[i, j]*mt_b[i, j]
     subs = 'ij,ij->ij'
     
     return np.einsum(subs, mt_a, mt_b)
@@ -282,3 +326,101 @@ def lskronf(mt_x, shape_a, shape_b):
     mt_b = unvec(np.sqrt(sigma[0]) * u[:, 0], *shape_b)   
 
     return mt_a, mt_b
+
+
+# Tensor operations
+def unfold(target, mode):
+    """Function that extract the n-mode unfolding of the target tensor.
+    
+    Parameters:
+    -----------
+    target : [n-D array]
+        Tensor to be unfolded.
+    mode : [scalar]
+        Selected mode.
+    
+    Returns:
+    --------
+    [2-D array]
+        The unfolded matrix.
+    """
+
+    # Taking the tensor shape:
+    shape = np.asarray(target.shape)
+    # Ordering in the notation I_1, ..., I_n:
+    ord_shape = np.hstack([shape[-2:], shape[:-2][::-1]])
+    
+    # Selecting the mode dimension to be the firt dimension of the numpy array:
+    select_dim = mode_index(np.arange(shape.size), mode)
+    # Transposing the tensor:
+    fibers = target.transpose(*select_dim)
+    
+    # Returning the unfolded matrices in Kolda standard form: 
+    if mode==3 or mode==2:
+        return fibers.reshape(ord_shape[mode - 1], -1, order='F')
+    else:
+        return fibers.reshape(ord_shape[mode - 1], -1)
+
+
+def fold(target, shape, mode):
+    """Function that performs the mode fold operation of a target matrix to a 
+    tensor with the given shape.
+    
+    Parameters:
+    -----------
+    target : [2-D array]
+        Mode unfolded matrix.
+    shape : [1-D array]
+        Tensor shape vector
+    mode : [scalar]
+        Selected mode.
+    
+    Returns:
+    --------
+    [n-D array]
+        Folded tensor.
+    """
+
+    # Taking the tensor shape:
+    shape_arr = np.asarray(shape)
+    # Selecting the mode dimension:
+    select_dim = mode_index(np.arange(shape_arr.size), mode)
+    # Reverting the reshape operation used in unfold:
+    if mode == 3 or mode == 2:
+        fibers = target.reshape(*shape_arr[select_dim], order='F')
+    else: 
+        fibers = target.reshape(*shape_arr[select_dim])
+    # Returning the folded tensor reverting the traspose operation 
+    # used in unfold:
+    return fibers.transpose(*select_dim)
+
+
+def m_mode_prod(tensor, mt_list):
+    """Functon that calculates the mode product of a tensor by a 
+    list of matrices, applying the n-mode product to the n-th matrix.
+    
+    Parameters:
+    -----------
+    tensor : [n-D array]
+        Target tensor.
+    mt_list : [list]
+        List of matrices.
+    
+    Returns:
+    --------
+    [n-D array]
+        Resultant tensor of the multilinear product
+    """
+
+    # Listing the modes:
+    modes = np.arange(len(mt_list)) + 1
+    
+    # Calculating the new shape:
+    new_shape = m_mode_prod_shape(tensor, mt_list[0], modes[0])
+    result = fold(mt_list[0] @ unfold(tensor, modes[0]), new_shape, modes[0])
+    # Calculating the product for the remaining matrices:
+    for mode, matrix in zip(modes[1:], mt_list[1:]):
+        new_shape = m_mode_prod_shape(result, matrix, mode)
+        result = fold(matrix @ unfold(result, mode), new_shape, mode)
+    # Returning the resultant tensor:
+    return result
