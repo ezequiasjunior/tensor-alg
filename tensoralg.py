@@ -7,7 +7,7 @@
 # toolbox.
 #-------------------------------------------------
 ## Author: Ezequias Júnior
-## Version: 0.5.0
+## Version: 0.5.3
 ## Email: ezequiasjunio@gmail.com
 ## Status: in development
 
@@ -15,7 +15,7 @@
 import numpy as np
 
 
-# Utils
+# Usefull functions
 def vec(mt_x):
     """Applies the vec operator on matrix mt_x (M, N), returning a 
     column vector(M*N, 1) containing the columns of mt_x stacked. 
@@ -148,6 +148,23 @@ def m_mode_prod_shape(tensor, matrix, mode):
     return np.hstack([ord_shape[2:][::-1], ord_shape[:2]])
 
 
+def tensor_norm(tensor):
+    """Calculates the tensor norm by taking the square root of the 
+    sum of the squares of all its elements.
+
+    Parameters:
+    -----------
+    tensor : [n-D array]
+        Target tensor
+
+    Returns:
+    --------
+    [scalar]
+        Tensor norm.
+    """
+    return np.sqrt(np.sum(np.abs(tensor)**2))
+
+
 # Matrix products
 def hadamard(mt_a, mt_b):
     """
@@ -208,37 +225,35 @@ def kron(mt_a, mt_b):
     return mt_out.reshape(m*i, n*j)
 
 
-def kr(mt_a, mt_b):
-    """Calculates the Khatri-Rao product between the two matrices 
-    mt_a and mt_b.
+def kr(*args):    
+    """Calculates the Khatri-Rao product between n matrices.
     
-    Parameters
-    ----------
-    mt_a : [2-D array]
-        Matrix I x J.
-    mt_b : [2-D array]
-        Matrix K x J.
+    Parameters:
+    -----------
+    *args : [2-D array]
+        List of n matrices K x J.
     
-    Returns
-    -------
+    Returns:
+    --------
     mt_out: [2-D array]
-    Matrix IJ x K: The Khatri-Rao product between mt_a and mt_b.
+        Matrix K^{n} x J: The Khatri-Rao product between mt_a and mt_b.
     """
-
-    # Testing the condition of existence of the Khatri-Rao product:
-    assert mt_a.shape[1] == mt_b.shape[1],\
-         f'The matrices must have the same number of columns!'
-
+    # Function to calculate the product kr(kr(A, A), A)
     # Storing the number of columns:
-    ncol = mt_a.shape[1]
-
-    # Calculating the product: it is returned a 3-D array i x k x j
-    # mt_out = np.einsum('ij, kj-> ikj', mt_a, mt_b)
-    # to save some micro seconds:
-    mt_out = mt_a[:, np.newaxis, :] * mt_b
-
-    # Applying the reshape to get the expected dimension of the product (ixk,j):
-    return mt_out.reshape((-1, ncol))
+    ncol = args[0].shape[1]
+    # Testing the condition of existence of the Khatri-Rao product:
+    assert ncol == args[1].shape[1],\
+         f'The matrices must have the same number of columns!'
+    
+    kr_prod = args[0]
+    for matrix in args[1:]:
+        # Calculating the product: it is returned a 3-D array i x k x j
+        # mt_out = np.einsum('ij, kj-> ikj', mt_a, mt_b)
+        # to save some micro seconds:
+        kr_prod = (kr_prod[:, np.newaxis, :] * matrix).reshape((-1, ncol))
+        # Applying the reshape to get the expected dimension of the product:
+        # (i x k, j)
+    return kr_prod
 
 
 # Special Matrix Factorizations
@@ -395,9 +410,9 @@ def fold(target, shape, mode):
     return fibers.transpose(*select_dim)
 
 
-def m_mode_prod(tensor, mt_list):
+def m_mode_prod(tensor, mt_list, mode_list=None):
     """Functon that calculates the mode product of a tensor by a 
-    list of matrices, applying the n-mode product to the n-th matrix.
+    list of matrices, applying the m-mode product to the m-th matrix.
     
     Parameters:
     -----------
@@ -411,9 +426,12 @@ def m_mode_prod(tensor, mt_list):
     [n-D array]
         Resultant tensor of the multilinear product
     """
-
+    
     # Listing the modes:
-    modes = np.arange(len(mt_list)) + 1
+    if mode_list is not None:
+        modes = np.asarray(mode_list) + 1
+    else:
+        modes = np.arange(len(mt_list)) + 1
     
     # Calculating the new shape:
     new_shape = m_mode_prod_shape(tensor, mt_list[0], modes[0])
@@ -424,3 +442,155 @@ def m_mode_prod(tensor, mt_list):
         result = fold(matrix @ unfold(result, mode), new_shape, mode)
     # Returning the resultant tensor:
     return result
+
+
+# Tensor decompositions
+def hosvd(tensor, rank_list=None):
+        
+    order = len(tensor.shape)
+    mt_u = [None]*order
+    mt_core = [None]*order
+    
+    # Multilinear rank approximation -> Truncated HOSVD:
+    if rank_list is not None:
+        if len(rank_list) == order:
+
+            for i, mode in enumerate(np.arange(order) + 1):
+                target = unfold(tensor, mode)
+                u, _, _ = np.linalg.svd(target)
+                mt_u[i] = u[:, :rank_list[i]] 
+                mt_core[i] = u[:, :rank_list[i]].conj().T
+    
+        else: 
+            raise Exception('the number of dimensions must be equal' +\
+                            ' to the tensor order.')
+    
+    # Full rank approximation -> HOSVD: 
+    else:    
+        for i, mode in enumerate(np.arange(order) + 1):
+            target = unfold(tensor, mode)
+            u, _, _ = np.linalg.svd(target)
+            mt_u[i] = u
+            mt_core[i] = u.conj().T
+        
+    core_tensor = m_mode_prod(tensor, mt_core)    
+    return core_tensor, mt_u
+
+
+def hooi(tensor, eps=1e-4, num_iter=100, rank_list=None):
+    
+    order = len(tensor.shape)
+    mt_a = [None]*order
+    modes = np.arange(order)
+    
+    if rank_list is not None:
+        # Initializing via Truncated HOSVD:
+        core_aux, mt_u_aux = hosvd(tensor, rank_list)
+        for k in range(num_iter):
+            for i in range(order):
+                # Matrices selection:
+                mask = np.ones(modes.size, dtype=bool)
+                mask[i] = False
+                # Auxiliary tensor:
+                mt_aux = [mt_u_aux[idx].conj().T 
+                                       for idx in range(order) if mask[idx]]
+                target = m_mode_prod(tensor, mt_aux, modes[mask])
+                # Update matrices:
+                u, _, _ = np.linalg.svd(unfold(target, modes[i] + 1))
+                mt_a[i] = u[:, :rank_list[i]]
+            # Construct the core tensor:
+            mt_core = [a.conj().T for a in mt_a]
+            core_tensor = m_mode_prod(tensor, mt_core)
+            # Approximation:
+            tensor_approx = m_mode_prod(core_tensor, mt_a)
+            # Convergence w.r.t. the target tensor:
+            error = tensor_norm(tensor - tensor_approx)/tensor_norm(tensor)
+            if error <= eps:
+                print(f'Number of iterations: {k+1}; Error: {error}')
+                break
+            else:
+                core_aux = core_tensor
+                mt_u_aux = mt_a
+
+    else:
+        # Initializing via HOSVD:
+        core_aux, mt_u_aux = hosvd(tensor)
+        for k in range(num_iter):
+            for i in range(order):
+                # Matrices selection:
+                mask = np.ones(modes.size, dtype=bool)
+                mask[i] = False
+                # Auxiliary tensor:
+                mt_aux = np.asarray([a.conj().T for a in mt_u_aux])
+                target = m_mode_prod(tensor, mt_aux[mask], modes[mask])
+                # Update matrices:
+                u, _, _ = np.linalg.svd(unfold(target, modes[i] + 1))
+                mt_a[i] = u
+            # Construct the core tensor:
+            mt_core = [a.conj().T for a in mt_a]
+            core_tensor = m_mode_prod(tensor, mt_core)
+            # Approximation:
+            tensor_approx = m_mode_prod(core_tensor, mt_a)
+            # Convergence w.r.t. the target tensor:
+            error = tensor_norm(tensor - tensor_approx)/tensor_norm(tensor)
+            if error <= eps:
+                print(f'Number of iterations: {k+1}; Error: {error}')
+                break
+            else:
+                core_aux = core_tensor
+                mt_u_aux = mt_a
+    
+    return core_tensor, mt_a
+
+
+
+# Special tensorized Matrix Factorizations
+def mlskrf(mt_x, nrow_a, nrow_b):
+    """Solving the problem: min ||X - kr(A, B)||^2 by estimating the matrices 
+    A and B by the Least Squares Khatri-Rao Factorization method, where mt_x 
+    was constructed following the model X = kr(A, B) with A of size (nrow_a, 
+    ncol) and B of size (nrow_b, ncol) with P being the number of columns of X.
+
+    Parameters:
+    -----------
+    mt_x : [2-D array]
+        Input matrix (nrow_a*nrow_b x ncol) to be factorized.
+    nrow_a : [scalar]
+        Number of rows of matrix mt_a.
+    nrow_b : [scalar]
+        Number of rows of matrix mt_b.
+
+    Returns:
+    --------
+    mt_a: [2-D array]
+    mt_b: [2-D array]
+        Estimated matrices mt_a and mt_b.
+    """
+    
+    # Number of columns of mt_x:
+    ncol = mt_x.shape[1]
+    # Checking if mt_x is complex and alocating the estimated matrices:
+    if np.iscomplexobj(mt_x):
+        mt_a = np.zeros((nrow_a, ncol), dtype=np.complex_)
+        mt_b = np.zeros((nrow_b, ncol), dtype=np.complex_)
+    else: # real case:
+        mt_a = np.zeros((nrow_a, ncol))
+        mt_b = np.zeros((nrow_b, ncol))
+    
+    # Making a 3rd order tensor with the X_p matrices as forntal scilces
+    # the number of slices is the number of columns ncol = p of mt_x:
+    
+    if np.isfortran(mt_x): # Dealing with MATLAB arrays (Fortram)
+        target = mt_x.T.reshape(ncol, nrow_b, nrow_a, order='F')
+    else: # 'A' = column-major indexes
+        target = mt_x.T.reshape(ncol, nrow_b, nrow_a, order='A')
+    
+    # Calculating the SVD of each X_p matrix: U \Sigma V^{H}
+    u, sigma, vh = np.linalg.svd(target)
+    
+    # Filling the columns of mt_a and mt_b with the respective rank-1 approx.:
+    for p in range(ncol): 
+        mt_a[:, p] = np.sqrt(sigma[p, 0]) * vh[p, 0, :]
+        mt_b[:, p] = np.sqrt(sigma[p, 0]) * u[p, :, 0]
+
+    return mt_a, mt_b
