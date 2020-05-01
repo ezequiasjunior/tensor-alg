@@ -5,7 +5,7 @@
 # the Homeworks solutions.
 #-------------------------------------------------
 ## Author: Ezequias Júnior
-## Version: 0.1.1 -> Homeworks 03 and 04 complex case
+## Version: 0.2.2 -> Homeworks 06, 07
 ## Email: ezequiasjunio@gmail.com
 ## Status: in development
 
@@ -40,7 +40,10 @@ def apply_noise(snr_db, x):
 
 def norm_mse(x, x_hat):
     # Calculates de Normalized Mean Square Error NMSE:
-    return (norm(x_hat - x, 'fro') / norm(x, 'fro'))**2
+    if len(x.shape) > 2: #Tensor case
+        return (tensoralg.tensor_norm(x-x_hat)/tensoralg.tensor_norm(x))**2
+    else: # Matix case
+        return (norm(x_hat - x, 'fro') / norm(x, 'fro'))**2
 
 def plot_results(x, y, y2, label1, label2, method):
     # Plotting results for homework 03 and 04 by generating a graph 
@@ -86,7 +89,7 @@ def plot_results(x, y, y2, label1, label2, method):
     show(row(plot_lin, plot_log))
     pass
 
-# Simulation functions:
+# Simulation functions: HOMEWORKS 03, 04
 def run_simulation_lskr(snr_db, num_mc, param1, param2, ncol):
     # Storing the results:
     norm_square_error = np.zeros((num_mc, snr_db.size))
@@ -129,3 +132,71 @@ def run_simulation_lskron(snr_db, num_mc, param1, param2):
     # Returning the NMSE:
     return norm_square_error.mean(axis=0)
     
+# Simulation functions: HOMEWORKS 06, 07
+def all_orth(core):
+    # All orthogonality check for a 3rd-Order core tensor.
+    k, i, j = core.shape
+    orth_k = []
+    for a in range(k):
+        for b in range(k):
+            if a != b:
+                orth_k.append(np.abs(np.trace(core[a, :, :].conj().T @\
+                                              core[b, :, :])))
+    orth_i = []
+    for a in range(i):
+        for b in range(i):
+            if a != b:
+                orth_i.append(np.abs(np.trace(core[:, a, :].conj().T @\
+                                              core[:, b, :])))                     
+    orth_j = []
+    for a in range(j):
+        for b in range(j):
+            if a != b:
+                orth_j.append(np.abs(np.trace(core[:, :, a].conj().T @\
+                                              core[:, :, b])))
+
+    print(f'Dimension I={i}: {np.round(orth_i)}')
+    print(f'Dimension J={j}: {np.round(orth_j)}')
+    print(f'Dimension K={k}: {np.round(orth_k)}')
+    pass
+
+def nth_singular_val(core):
+    # Check the n-th singular values ordering property 
+    # for a 3rd-Order core tensor.
+    n_sing_values = []
+    for n in range(len(core.shape)):
+        sigma = np.zeros(core.shape[n])
+        for i in range(core.shape[n]):
+            if n == 0:
+                sigma[i] = norm(core[i, :, :], 'fro')
+            elif n == 1:
+                sigma[i] = norm(core[:, i, :], 'fro')
+            else:
+                sigma[i] = norm(core[:, :, i], 'fro')
+        n_sing_values.append(sigma)
+    print(f'\nN-th singular values (I, J, K):\n{n_sing_values[1]}'+\
+          f'\n{n_sing_values[2]}\n{n_sing_values[0]}')
+
+def run_simulation_mlskr(snr_db, num_mc, nrows, ncol, flag=False):
+    # Storing the results:
+    norm_square_error = np.zeros((num_mc, snr_db.size))
+    # Monte Carlo Simulation:
+    for realization in tnrange(num_mc):
+        # Generating matrices:
+        mt_list = [rand(rows, ncol).view(np.complex_) for rows in nrows]
+        # Matrix X_0
+        mt_x = tensoralg.kr(*mt_list)
+        for ids, snr in enumerate(snr_db):
+            # Applying noise to the matrix X_0:
+            x_noise = apply_noise(snr, mt_x)
+            # Estimating factor matrices:
+            if not flag: # Using HOSVD
+                a_hat = tensoralg.mlskrf(x_noise, nrows)
+            else: # Using HOOI
+                a_hat = tensoralg.mlskrf(x_noise, nrows, flag)
+            # Calculating the estimative of X_0:
+            x_hat = tensoralg.kr(*a_hat)
+            # Calculating the normalized error:
+            norm_square_error[realization, ids] = norm_mse(mt_x, x_hat)
+    # Returning the NMSE:
+    return norm_square_error.mean(axis=0)

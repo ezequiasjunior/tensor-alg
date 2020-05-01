@@ -7,7 +7,7 @@
 # toolbox.
 #-------------------------------------------------
 ## Author: Ezequias Júnior
-## Version: 0.5.3
+## Version: 0.7.3
 ## Email: ezequiasjunio@gmail.com
 ## Status: in development
 
@@ -225,7 +225,7 @@ def kron(mt_a, mt_b):
     return mt_out.reshape(m*i, n*j)
 
 
-def kr(*args):    
+def kr(*args):
     """Calculates the Khatri-Rao product between n matrices.
     
     Parameters:
@@ -261,7 +261,7 @@ def lskrf(mt_x, nrow_a, nrow_b):
     """Solving the problem: min ||X - kr(A, B)||^2 by estimating the matrices 
     A and B by the Least Squares Khatri-Rao Factorization method, where mt_x 
     was constructed following the model X = kr(A, B) with A of size (nrow_a, 
-    ncol) and B of size (nrow_b, ncol) with P being the number of columns of X.
+    ncol) and B of size (nrow_b, ncol).
 
     Parameters:
     -----------
@@ -446,25 +446,35 @@ def m_mode_prod(tensor, mt_list, mode_list=None):
 
 # Tensor decompositions
 def hosvd(tensor, rank_list=None):
-        
+    """Calculates the High Order Singular Value Decomposition of the given 
+    tensor and allows the truncation for the R1,..., R_N rank approximation.
+
+    Parameters:
+    -----------
+    tensor : [n-D array]
+        Tensor to apply the decomposition.
+    rank_list : [1-D array], optional
+        List of new dimensions R_1,...,R_N, by default None.
+
+    Returns:
+    --------
+    [n-D array, list]
+        Core tensor and N factor matrices.
+    """
     order = len(tensor.shape)
     mt_u = [None]*order
     mt_core = [None]*order
-    
     # Multilinear rank approximation -> Truncated HOSVD:
     if rank_list is not None:
         if len(rank_list) == order:
-
             for i, mode in enumerate(np.arange(order) + 1):
                 target = unfold(tensor, mode)
                 u, _, _ = np.linalg.svd(target)
                 mt_u[i] = u[:, :rank_list[i]] 
                 mt_core[i] = u[:, :rank_list[i]].conj().T
-    
         else: 
             raise Exception('the number of dimensions must be equal' +\
                             ' to the tensor order.')
-    
     # Full rank approximation -> HOSVD: 
     else:    
         for i, mode in enumerate(np.arange(order) + 1):
@@ -472,17 +482,38 @@ def hosvd(tensor, rank_list=None):
             u, _, _ = np.linalg.svd(target)
             mt_u[i] = u
             mt_core[i] = u.conj().T
-        
+    # Construct the core tensor:
     core_tensor = m_mode_prod(tensor, mt_core)    
     return core_tensor, mt_u
 
 
-def hooi(tensor, eps=1e-4, num_iter=100, rank_list=None):
-    
+def hooi(tensor, eps=1e-4, num_iter=100, verb=False, rank_list=None):
+    """Calculates the High Order Singular Value Decomposition of the given 
+    tensor and allows the truncation for the R1,..., R_N rank approximation 
+    using the High Order Orthogonal Iterations algorithm initialized with the 
+    HOSVD.
+
+    Parameters:
+    -----------
+    tensor : [n-D array]
+        Tensor to apply the decomposition.
+    eps : [scalar]
+        Error criteria for the HOOI algorithm, by default 1e-4.
+    num_iter : [scalar]
+        Number of iterations for the HOOI algorithm, by default 100.
+    verb : [boolean]
+        Flag for allow verbose.
+    rank_list : [1-D array], optional
+        List of new dimensions R_1,...,R_N, by default None.
+
+    Returns:
+    --------
+    [n-D array, list]
+        Core tensor and N factor matrices.
+    """
     order = len(tensor.shape)
     mt_a = [None]*order
     modes = np.arange(order)
-    
     if rank_list is not None:
         # Initializing via Truncated HOSVD:
         core_aux, mt_u_aux = hosvd(tensor, rank_list)
@@ -506,12 +537,11 @@ def hooi(tensor, eps=1e-4, num_iter=100, rank_list=None):
             # Convergence w.r.t. the target tensor:
             error = tensor_norm(tensor - tensor_approx)/tensor_norm(tensor)
             if error <= eps:
-                print(f'Number of iterations: {k+1}; Error: {error}')
+                if verb: print(f'Number of iterations: {k+1}; Error: {error}')
                 break
             else:
                 core_aux = core_tensor
                 mt_u_aux = mt_a
-
     else:
         # Initializing via HOSVD:
         core_aux, mt_u_aux = hosvd(tensor)
@@ -534,63 +564,60 @@ def hooi(tensor, eps=1e-4, num_iter=100, rank_list=None):
             # Convergence w.r.t. the target tensor:
             error = tensor_norm(tensor - tensor_approx)/tensor_norm(tensor)
             if error <= eps:
-                print(f'Number of iterations: {k+1}; Error: {error}')
+                if verb: print(f'Number of iterations: {k+1}; Error: {error}')
                 break
             else:
                 core_aux = core_tensor
                 mt_u_aux = mt_a
-    
     return core_tensor, mt_a
 
 
-
 # Special tensorized Matrix Factorizations
-def mlskrf(mt_x, nrow_a, nrow_b):
-    """Solving the problem: min ||X - kr(A, B)||^2 by estimating the matrices 
-    A and B by the Least Squares Khatri-Rao Factorization method, where mt_x 
-    was constructed following the model X = kr(A, B) with A of size (nrow_a, 
-    ncol) and B of size (nrow_b, ncol) with P being the number of columns of X.
+def mlskrf(mt_x, nrow_a, use_hooi=False):
+    """Solving the problem: min ||X - kr(A_1,..., A_N )||^2 by estimating the 
+    matrices A_n by the Multidimensionla Least Squares Khatri-Rao Factorization 
+    method, where mt_x was constructed following the model X = kr(A_1,..., A_n) 
+    with each matrix A_n of size (nrows_a[n], ncol).
 
     Parameters:
     -----------
     mt_x : [2-D array]
-        Input matrix (nrow_a*nrow_b x ncol) to be factorized.
-    nrow_a : [scalar]
-        Number of rows of matrix mt_a.
-    nrow_b : [scalar]
-        Number of rows of matrix mt_b.
+        Input matrix (nrow_a[1]*...*nrow_a[N], x ncol) to be factorized.
+    nrow_a : [1-D array]
+        Number of rows of matrix each matrix A_n.
+    use_hooi : [boolean]
+        Flag to use HOOI algorithm to n-rank approximation.
 
     Returns:
     --------
-    mt_a: [2-D array]
-    mt_b: [2-D array]
-        Estimated matrices mt_a and mt_b.
+    mt_a: list of [2-D array]
+        Estimated matrices A_n.
     """
-    
+    assert mt_x.shape[0] == np.asarray(nrow_a).prod(),\
+        f'The number of rows of mt_x must be equal to the product of nrow_a!'
+
     # Number of columns of mt_x:
     ncol = mt_x.shape[1]
-    # Checking if mt_x is complex and alocating the estimated matrices:
-    if np.iscomplexobj(mt_x):
-        mt_a = np.zeros((nrow_a, ncol), dtype=np.complex_)
-        mt_b = np.zeros((nrow_b, ncol), dtype=np.complex_)
-    else: # real case:
-        mt_a = np.zeros((nrow_a, ncol))
-        mt_b = np.zeros((nrow_b, ncol))
-    
-    # Making a 3rd order tensor with the X_p matrices as forntal scilces
-    # the number of slices is the number of columns ncol = p of mt_x:
-    
-    if np.isfortran(mt_x): # Dealing with MATLAB arrays (Fortram)
-        target = mt_x.T.reshape(ncol, nrow_b, nrow_a, order='F')
-    else: # 'A' = column-major indexes
-        target = mt_x.T.reshape(ncol, nrow_b, nrow_a, order='A')
-    
-    # Calculating the SVD of each X_p matrix: U \Sigma V^{H}
-    u, sigma, vh = np.linalg.svd(target)
-    
-    # Filling the columns of mt_a and mt_b with the respective rank-1 approx.:
-    for p in range(ncol): 
-        mt_a[:, p] = np.sqrt(sigma[p, 0]) * vh[p, 0, :]
-        mt_b[:, p] = np.sqrt(sigma[p, 0]) * u[p, :, 0]
+    # Alocating the estimated matrices:
+    num_matrices = len(nrow_a)
+    mt_a = [np.zeros((row, ncol), dtype=np.complex_) for row in nrow_a]
+    # Ordering shapes in the Numpy notation:
+    ord_shape = nrow_a[::-1][2:][::-1] + nrow_a[::-1][:2]
+    for r in range(ncol):
+    # Making a n-th order rank-1 tensor using r-th column of mt_x 
+    # the shape is the number of rows of each matrix (nrow_a[N]x...xnrow_a[1]):
+        target = mt_x[:, r].reshape(*nrow_a).swapaxes(num_matrices-2, 
+                                                      num_matrices-1)
+        target = target.reshape(*ord_shape)
+        # Taking best rank-1 approximation:
+        if not use_hooi: 
+            core, u = hosvd(target)
+        else:
+            core, u = hooi(target)
+        
+        for n in range(num_matrices):
+        # Filling the columns of mt_a[n] with the respective n_rank-1 approx.:
+            mt_a[n][:, r] = u[::-1][n][:, 0]
+            mt_a[n][:, r] *= np.power(core.flat[0] + 0j, 1/num_matrices)
 
-    return mt_a, mt_b
+    return mt_a
