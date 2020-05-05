@@ -7,7 +7,7 @@
 # toolbox.
 #-------------------------------------------------
 ## Author: Ezequias Júnior
-## Version: 0.7.3
+## Version: 0.8.0
 ## Email: ezequiasjunio@gmail.com
 ## Status: in development
 
@@ -30,7 +30,7 @@ def vec(mt_x):
     out: [2-D array]
         Column vector containing the columns of mt_x.
     """
-    return mt_x.flatten(order='F').resape(-1, 1)
+    return mt_x.flatten(order='F').reshape(-1, 1)
 
 
 def unvec(vt_x, nrow, ncol):
@@ -194,36 +194,40 @@ def hadamard(mt_a, mt_b):
     return np.einsum(subs, mt_a, mt_b)
 
 
-def kron(mt_a, mt_b):
-    """Calculates the Kronecker Product between the two matrices 
-    mt_a and mt_b.
+def kron(*args):
+    """Calculates the Kronecker Product between n matrices.
     
-    Parameters
-    ----------
-    mt_a : [2-D array]
-        Matrix M x N.
-    mt_b : [2-D array]
-        Matrix I x J.
+    Parameters:
+    -----------
+    *args : [2-D array]
+        List of n matrices K x J.
     
-    Returns
-    -------
+    Returns:
+    --------
     mt_out: [2-D array]
-    Matrix MI x NJ: The Kronecker product between mt_a and mt_b.
+        Matrix K^{n} x J^{n}: The Kronecker product.
     """
-
-    # Storing the matrices dimensions:
-    m, n = mt_a.shape
-    i, j = mt_b.shape 
-
-    # Computing the Kronecker product using Numpy broadcasting:
-    # it is returned a 4-D array (M x I x  N x J)
-    mt_out = mt_a[:, np.newaxis, :, np.newaxis] *\
-             mt_b[np.newaxis, :, np.newaxis, :]
-
-    # Applying the reshape to get the expected dimension of the 
-    # product (MI x NJ):
-    return mt_out.reshape(m*i, n*j)
-
+    # Auxiliary function:
+    def nkron(mt_a, mt_b):
+        # Function to calculate the product kron(A, B)
+        # Storing the matrices dimensions:
+        m, n = mt_a.shape
+        i, j = mt_b.shape 
+        # Computing the Kronecker product using Numpy broadcasting:
+        # it is returned a 4-D array (M x I x  N x J)
+        mt_out = mt_a[:, np.newaxis, :, np.newaxis] *\
+                 mt_b[np.newaxis, :, np.newaxis, :]
+        # Applying the reshape to get the expected dimension of the 
+        # product (MI x NJ):
+        return mt_out.reshape(m*i, n*j)
+    
+    # Calculates the product kron(...kron(kron(A0, A1),...), An)
+    kron_prod = args[0]
+    for matrix in args[1:]:
+        kron_prod = nkron(kron_prod, matrix)
+    
+    return kron_prod
+ 
 
 def kr(*args):
     """Calculates the Khatri-Rao product between n matrices.
@@ -236,7 +240,7 @@ def kr(*args):
     Returns:
     --------
     mt_out: [2-D array]
-        Matrix K^{n} x J: The Khatri-Rao product between mt_a and mt_b.
+        Matrix K^{n} x J: The Khatri-Rao product.
     """
     # Function to calculate the product kr(kr(A, A), A)
     # Storing the number of columns:
@@ -572,9 +576,14 @@ def hooi(tensor, eps=1e-4, num_iter=100, verb=False, rank_list=None):
     return core_tensor, mt_a
 
 
+# TODO: cp decomp
+# def funcname(parameter_list):
+#     pass
+
+
 # Special tensorized Matrix Factorizations
 def mlskrf(mt_x, nrow_a, use_hooi=False):
-    """Solving the problem: min ||X - kr(A_1,..., A_N )||^2 by estimating the 
+    """Solving the problem: min ||X - kr(A_1,..., A_N)||^2 by estimating the 
     matrices A_n by the Multidimensionla Least Squares Khatri-Rao Factorization 
     method, where mt_x was constructed following the model X = kr(A_1,..., A_n) 
     with each matrix A_n of size (nrows_a[n], ncol).
@@ -620,4 +629,75 @@ def mlskrf(mt_x, nrow_a, use_hooi=False):
             mt_a[n][:, r] = u[::-1][n][:, 0]
             mt_a[n][:, r] *= np.power(core.flat[0] + 0j, 1/num_matrices)
 
+    return mt_a
+
+
+def lskronf_3d(mt_x, shapes, use_hooi=False):
+    """Solving the problem: min ||X - kron(A_1, A_2, A_3)||^2 by estimating the 
+    matrices A_n by the Multilinear Least Squares Kronecker Factorization 
+    method, where mt_x was constructed following the model X = kron(A_1, A_2, 
+    A_3) with A_n of size shapes[n].
+
+    Parameters:
+    -----------
+    mt_x : [2-D array]
+        Input matrix to be factorized.
+    nrow_a : [list]
+        Sizes of each matrix A_n.
+    use_hooi : [boolean]
+        Flag to use HOOI algorithm to n-rank approximation.
+
+    Returns:
+    --------
+    mt_a: list of [2-D array]
+        Estimated matrices A_n.
+    """
+    # Auxiliary function for the rearrangment of the input matrix:
+    def extract_block_3d(blkmatrix, shapes):    
+        # Extracting the 1st dimensions:
+        nrow_a, ncol_a = shapes[0]
+        nrow_b, ncol_b = [int(x/y) for x, y in zip(blkmatrix.shape, shapes[0])] 
+        # Ordering the outer blocks in row-order:
+        split = np.array(np.hsplit(blkmatrix, ncol_a))
+        # stacking the blocks in a 3rd order tensor:
+        aux = split.reshape(nrow_a*ncol_a, nrow_b, ncol_b)
+        nrow_a, ncol_a = shapes[1]
+        nrow_b, ncol_b = [int(x/y) for x,y in zip((nrow_b, ncol_b), shapes[1])]
+        # Allocating the matrix X_bar:
+        if np.iscomplexobj(blkmatrix):
+            out_x = np.zeros((nrow_b*ncol_b*nrow_a*ncol_a, np.prod(shapes[0])), 
+                              dtype=np.complex_)
+        else:
+            out_x = np.zeros((nrow_b*ncol_b*nrow_a*ncol_a, np.prod(shapes[0])))
+        # Access the inner blocks:
+        for s in range(aux.shape[0]):
+            split_aux = np.array(np.hsplit(aux[s], ncol_a))
+            split_aux = split_aux.reshape(nrow_a*ncol_a, nrow_b, ncol_b).T
+            # Column equals to vec(X_bar)
+            out_x[:, [s]] = vec(split_aux.reshape(nrow_b*ncol_b,nrow_a*ncol_a))
+        # After construct the matrix X_bar:    
+        return out_x
+
+    # Listing the size of each matrix for the tensor construction:
+    size_aux = [s[0]*s[1] for s in shapes]
+    # Alocating the estimated matrices:
+    num_matrices = len(shapes)
+    mt_a = [None]*num_matrices
+    # Constructing the matrix X_bar rearranging the elements:
+    rearrange_x = extract_block_3d(mt_x, shapes)
+    vector_x = vec(rearrange_x)
+    # Construct the tensor to apply the decomposition:
+    # Ordering shapes in the Numpy notation:
+    target = vector_x.reshape(*size_aux).swapaxes(num_matrices-2, 
+                                                  num_matrices-1)
+    # Taking the approximation:
+    if not use_hooi: 
+        core, u = hosvd(target)
+    else:
+        core, u = hooi(target)
+    # Calculating mt_a as the best rank-1 approximation:
+    for n, shape in enumerate(shapes):
+        mt_a[n] = unvec(u[::-1][n][:, 0], *shape) + 0j
+        mt_a[n] *= np.power(core.flat[0] + 0j, 1/num_matrices)
+    
     return mt_a
