@@ -5,7 +5,7 @@
 # the Homeworks solutions.
 #-------------------------------------------------
 ## Author: Ezequias Júnior
-## Version: 0.2.2 -> Homeworks 06, 07
+## Version: 0.3.0 -> Homeworks: 08
 ## Email: ezequiasjunio@gmail.com
 ## Status: in development
 
@@ -196,6 +196,31 @@ def run_simulation_mlskr(snr_db, num_mc, nrows, ncol, flag=False):
                 a_hat = tensoralg.mlskrf(x_noise, nrows, flag)
             # Calculating the estimative of X_0:
             x_hat = tensoralg.kr(*a_hat)
+            # Calculating the normalized error:
+            norm_square_error[realization, ids] = norm_mse(mt_x, x_hat)
+    # Returning the NMSE:
+    return norm_square_error.mean(axis=0)
+
+def run_simulation_lskron3d(snr_db, num_mc, shapes, flag=False):
+    # Storing the results:
+    norm_square_error = np.zeros((num_mc, snr_db.size))
+    # Monte Carlo Simulation:
+    for realization in tnrange(num_mc):
+        # Generating matrices:
+        mt_list = [rand(shape[0], shape[1]*2).view(np.complex_) 
+                   for shape in shapes]
+        # Matrix X_0
+        mt_x = tensoralg.kron(*mt_list)
+        for ids, snr in enumerate(snr_db):
+            # Applying noise to the matrix X_0:
+            x_noise = apply_noise(snr, mt_x)
+            # Estimating factor matrices:
+            if not flag: # Using HOSVD
+                a_hat = tensoralg.lskronf_3d(x_noise, shapes)
+            else: # Using HOOI
+                a_hat = tensoralg.lskronf_3d(x_noise, shapes, flag)
+            # Calculating the estimative of X_0:
+            x_hat = tensoralg.kron(*a_hat)
             # Calculating the normalized error:
             norm_square_error[realization, ids] = norm_mse(mt_x, x_hat)
     # Returning the NMSE:
