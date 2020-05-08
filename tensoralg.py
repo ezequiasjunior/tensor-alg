@@ -7,7 +7,7 @@
 # toolbox.
 #-------------------------------------------------
 ## Author: Ezequias Júnior
-## Version: 0.8.0
+## Version: 0.8.5
 ## Email: ezequiasjunio@gmail.com
 ## Status: in development
 
@@ -163,6 +163,30 @@ def tensor_norm(tensor):
         Tensor norm.
     """
     return np.sqrt(np.sum(np.abs(tensor)**2))
+
+
+def cpd_tensor(factor_mtx):
+    """Construct a N-th order tensor following the PARAFAC model using a 
+    list of N factor matrices.
+
+    Parameters:
+    -----------
+    factor_mtx : list [2-D array]
+        List of N factor matrices (I_n, R).
+
+    Returns:
+    --------
+    tensor : [N-D array]
+        Reconstructed tensor (I_1, ..., I_N).
+    """
+    # Extract the size of each dimension of the reconstructed tensor:
+    rows = [m.shape[0] for m in factor_mtx]
+    # Ordering shapes in the Numpy notation:
+    ord_shape = rows[2:][::-1] + rows[:2]
+    # 1-Mode tensor folding: 
+    x1 = factor_mtx[0] @ kr(*factor_mtx[1:][::-1]).T
+    tensor = fold(x1, ord_shape, 1)
+    return tensor
 
 
 # Matrix products
@@ -576,9 +600,76 @@ def hooi(tensor, eps=1e-4, num_iter=100, verb=False, rank_list=None):
     return core_tensor, mt_a
 
 
-# TODO: cp decomp
-# def funcname(parameter_list):
-#     pass
+def cp_decomp(tensor, rank, eps=1e-6, num_iter=500, verb=False):
+    """CANDECOMP/PARAFAC decomposition of a tensor(I_1 x ... x I_n) with 
+    respect to rank R in a set of N factor matrices A_n (I_n x R) throug the 
+    Alternated Least Squares algorithm.
+
+    Parameters:
+    -----------
+    tensor : [N-D array]
+        Tensor to be factorized.
+    rank : [scalar]
+        R = rank, rank of the tensor/number of rank-1 components that 
+        recontruct X.
+    eps : [scalar], optional
+        Tolerance for the error between estimatives of each iteration, 
+        by default 1e-6.
+    num_iter : [int], optional
+        Number of iterations considered in the ALS algorithm, by default 200.
+    verb : [bool], optional
+        Flag for verbose and to return the errors, by default False.
+
+    Returns:
+    --------
+    list of [2-D array]
+        Factor matrices after ALS convergence.
+    """
+    # Taking the tensor shape for the rows of each factor matrix:
+    shape = np.asarray(tensor.shape)
+    # Ordering in the notation I_1, ..., I_n:
+    rows = np.hstack([shape[-2:], shape[:-2][::-1]]) 
+    num_matrices = len(rows)
+    # Initializing the N factor matrices:
+    if np.iscomplexobj(tensor):
+        factor_mtx = [np.random.rand(i, 2*rank).view(complex) for i in rows]
+    else:
+        factor_mtx = [np.random.rand(i, rank) for i in rows]
+    # Storing the error between each iteration:
+    error = np.zeros((num_iter, 1)) 
+    # 1-mode unfolding of tensor:
+    x1_aux = unfold(tensor, 1)
+    # Alternated Least Squares:
+    for k in range(num_iter):
+        # Estimating factor matrices
+        for n in range(num_matrices):
+            mask = np.ones(num_matrices, dtype=bool)
+            mask[n] = False
+            # N-1 selected matrices:
+            mt_aux = [factor_mtx[m] for m in range(num_matrices) if mask[m]]
+            # Estimating the n-th factor matrix:
+            factor_mtx[n] = unfold(tensor, n+1) @\
+                            np.linalg.pinv(kr(*mt_aux[::-1]).T)
+        # Reconstructing tensor 1-mode matrix:
+        x1_hat = factor_mtx[0] @ kr(*factor_mtx[1:][::-1]).T
+        # Calculating the error using the cost function:
+        error[k] = np.linalg.norm(x1_aux - x1_hat, 'fro')**2
+        # Convergence treatment:
+        if np.abs(error[k] - error[k - 1]) < eps:
+            if verb:
+                print(f'Algorithm converged! Iteration {k+1}; '+\
+                      f'Achieved error: {error[k]}')
+            break
+        # Max. iterations check:
+        elif k+1 == num_iter:
+            if verb:
+                print(f'Reached max. number of iterations ({k+1})! '+\
+                      f'Current error: {error[k]}')
+    # End
+    if not verb:
+        return factor_mtx
+    else:
+        return factor_mtx, error
 
 
 # Special tensorized Matrix Factorizations
