@@ -7,9 +7,10 @@
 # toolbox.
 #-------------------------------------------------
 ## Author: Ezequias Júnior
-## Version: 0.8.5
+## Version: 0.9.2.1
 ## Email: ezequiasjunio@gmail.com
 ## Status: in development
+
 
 # Imports
 import numpy as np
@@ -52,6 +53,21 @@ def unvec(vt_x, nrow, ncol):
         Matrix X nrow x ncol. 
     """
     return vt_x.reshape(nrow, ncol, order='F')
+
+# TODO: doc
+def npy2math(shape):
+    shape = list(shape)
+    # Ordering tensor shape in the notation I_1, ..., I_n:
+    math_order = shape[-2:] + shape[:-2][::-1]
+    return math_order
+
+# TODO: doc
+def math2npy(shape):
+    # shape is a list
+    shape = list(shape)
+    # Ordering tensor shape in the Numpy notation:
+    npy_order = shape[2:][::-1] + shape[:2]
+    return npy_order
 
 
 def extract_block(blkmatrix, shape_a, shape_b):
@@ -373,14 +389,14 @@ def lskronf(mt_x, shape_a, shape_b):
 
 # Tensor operations
 def unfold(target, mode):
-    """Function that extract the n-mode unfolding of the target tensor.
+    """Function that extract the n-mode unfolding of the target tensor. 
     
     Parameters:
     -----------
     target : [n-D array]
         Tensor to be unfolded.
     mode : [scalar]
-        Selected mode.
+        Selected mode. Supported modes: {1, 2, 3}.
     
     Returns:
     --------
@@ -403,6 +419,18 @@ def unfold(target, mode):
         return fibers.reshape(ord_shape[mode - 1], -1, order='F')
     else:
         return fibers.reshape(ord_shape[mode - 1], -1)
+
+# TODO: doc
+def tensor_vec(tensor):
+    target = np.transpose(tensor, npy2math(np.arange(tensor.ndim)))
+    target_m1 = target.reshape(target.shape[0], -1, order='F') 
+    return vec(target_m1)
+
+# TODO: doc
+def tensor_unvec(vector, math_shape):
+    target_m1 = vector.reshape(math_shape[0], -1, order='F')
+    target = target_m1.reshape(math_shape, order='F')
+    return target.transpose(math2npy(np.arange(target.ndim)))
 
 
 def fold(target, shape, mode):
@@ -437,7 +465,7 @@ def fold(target, shape, mode):
     # used in unfold:
     return fibers.transpose(*select_dim)
 
-
+# TODO: mode list doc
 def m_mode_prod(tensor, mt_list, mode_list=None):
     """Functon that calculates the mode product of a tensor by a 
     list of matrices, applying the m-mode product to the m-th matrix.
@@ -471,6 +499,38 @@ def m_mode_prod(tensor, mt_list, mode_list=None):
     # Returning the resultant tensor:
     return result
 
+# TODO: validated! - doc
+def tensor_kron(*args):
+    
+    def tkron(ten_a, ten_b):
+        
+        k = max(ten_a.ndim, ten_b.ndim)
+        m_a = npy2math(ten_a.shape)
+        m_b = npy2math(ten_b.shape)
+        
+        math_shape = m_b + m_a
+        new_shape = np.array(m_a) * np.array(m_b)
+        
+        permutation = []
+        for p in np.arange(k):
+            permutation += [p, p + k]
+        
+        prod = kron(tensor_vec(ten_a), tensor_vec(ten_b))
+
+        reshaped = prod.reshape(math_shape, order='F')
+        
+        permuted = reshaped.transpose(permutation)
+        
+        target = permuted.reshape(new_shape, order='F')
+        
+        return target.transpose(math2npy(np.arange(len(new_shape))))
+        
+    # Calculates the product kron(...kron(kron(T0, T1),...), Tn)
+    kron_prod = args[0]
+    for tensor in args[1:]:
+        kron_prod = tkron(kron_prod, tensor)
+    
+    return kron_prod
 
 # Tensor decompositions
 def hosvd(tensor, rank_list=None):
@@ -657,14 +717,14 @@ def cp_decomp(tensor, rank, eps=1e-6, num_iter=500, verb=False):
         # Convergence treatment:
         if np.abs(error[k] - error[k - 1]) < eps:
             if verb:
-                print(f'Algorithm converged! Iteration {k+1}; '+\
-                      f'Achieved error: {error[k]}')
+                print(f'Algorithm converged with {k+1} iterations and '+\
+                      f'an achieved error of {error[k]} between iteractions.')
             break
         # Max. iterations check:
         elif k+1 == num_iter:
             if verb:
                 print(f'Reached max. number of iterations ({k+1})! '+\
-                      f'Current error: {error[k]}')
+                      f'Current error: {error[k]}.')
     # End
     if not verb:
         return factor_mtx
