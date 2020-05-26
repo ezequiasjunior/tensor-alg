@@ -7,9 +7,9 @@
 # toolbox.
 #-------------------------------------------------
 ## Author: Ezequias Júnior
-## Version: 0.9.2.1
+## Version: 1.0.1
 ## Email: ezequiasjunio@gmail.com
-## Status: in development
+## Status: in development.
 
 
 # Imports
@@ -54,16 +54,40 @@ def unvec(vt_x, nrow, ncol):
     """
     return vt_x.reshape(nrow, ncol, order='F')
 
-# TODO: doc
+
 def npy2math(shape):
+    """Auxiliary function for convert an numpy array shape to the Octave 
+    notation.
+
+    Parameters:
+    -----------
+    shape : [tuple/list/array]
+        Input shape for conversion.
+
+    Returns:
+    --------
+    [list]
+        Converted shape.
+    """
     shape = list(shape)
     # Ordering tensor shape in the notation I_1, ..., I_n:
     math_order = shape[-2:] + shape[:-2][::-1]
     return math_order
 
-# TODO: doc
+
 def math2npy(shape):
-    # shape is a list
+    """Auxiliary function for convert an array shape to the numpy notation.
+
+    Parameters:
+    -----------
+    shape : [tuple/list/array]
+        Input shape for conversion.
+
+    Returns:
+    --------
+    [list]
+        Converted shape.
+    """
     shape = list(shape)
     # Ordering tensor shape in the Numpy notation:
     npy_order = shape[2:][::-1] + shape[:2]
@@ -396,16 +420,47 @@ def unfold(target, mode):
     else:
         return fibers.reshape(ord_shape[mode - 1], -1)
 
-# TODO: doc
+
 def tensor_vec(tensor):
+    """Vectorize a tensor os shape (I_1 x ... x I_n) into a vector of shape 
+    (I_1...I_n x 1).
+
+    Parameters:
+    -----------
+    tensor : [N-D array]
+        Tensor to be vectorized.
+
+    Returns:
+    --------
+    [2-D array]
+        Column vector.
+    """
+    # Permute dimensions:
     target = np.transpose(tensor, npy2math(np.arange(tensor.ndim)))
+    # Select 1-mode fibers:
     target_m1 = target.reshape(target.shape[0], -1, order='F') 
+    # Return the vectorization of 1-mode fibers:
     return vec(target_m1)
 
-# TODO: doc
+
 def tensor_unvec(vector, math_shape):
+    """Reshape a vector of shape (I_1...I_n x 1) into a tensor of math_shape.
+
+    Parameters:
+    -----------
+    vector : [2-D array]
+        Input vector.
+
+    Returns:
+    --------
+    [N-D array]
+        Reshaped tensor.
+    """
+    # Reshape the vector unpacking the 1-mode fibers:
     target_m1 = vector.reshape(math_shape[0], -1, order='F')
+    # Reshape to the tensor shape:
     target = target_m1.reshape(math_shape, order='F')
+    # Returning the tensor permuted to the numpy order:
     return target.transpose(math2npy(np.arange(target.ndim)))
 
 
@@ -441,7 +496,7 @@ def fold(target, shape, mode):
     # used in unfold:
     return fibers.transpose(*select_dim)
 
-# TODO: mode list doc
+
 def m_mode_prod(tensor, mt_list, mode_list=None):
     """Functon that calculates the mode product of a tensor by a 
     list of matrices, applying the m-mode product to the m-th matrix.
@@ -452,11 +507,12 @@ def m_mode_prod(tensor, mt_list, mode_list=None):
         Target tensor.
     mt_list : [list]
         List of matrices.
-    
+    mode_list: [list]
+        List of modes to apply the product. Default: None.    
     Returns:
     --------
     [n-D array]
-        Resultant tensor of the multilinear product
+        Resultant tensor of the multilinear product.
     """
     
     # Listing the modes:
@@ -475,11 +531,22 @@ def m_mode_prod(tensor, mt_list, mode_list=None):
     # Returning the resultant tensor:
     return result
 
-# TODO: validated! - doc
+
 def tensor_kron(*args):
+    """Calculates the Kronecker Product between n tensors.
     
+    Parameters:
+    -----------
+    *args : [N-D array]
+        List of n tensors.
+    
+    Returns:
+    --------
+    mt_out: [N-D array]
+        The tensor Kronecker product.
+    """
     def tkron(ten_a, ten_b):
-        
+        # Auxiliary function to perform the tensor kronecker product:
         k = max(ten_a.ndim, ten_b.ndim)
         m_a = npy2math(ten_a.shape)
         m_b = npy2math(ten_b.shape)
@@ -639,7 +706,21 @@ def hooi(tensor, eps=1e-4, num_iter=100, verb=False, rank_list=None):
 
 # Auxiliary functions:
 def ord_unfold(tensor, mode):
+    """Function that extract the n-mode unfolding of the target tensor. 
+    Correction of the fibers order applyied.
     
+    Parameters:
+    -----------
+    target : [n-D array]
+        Tensor to be unfolded.
+    mode : [scalar]
+        Selected mode. Supported modes: {1, 2, 3}.
+    
+    Returns:
+    --------
+    [2-D array]
+        The unfolded matrix.
+    """
     shape = npy2math(tensor.shape)
     size = tensor.size
 
@@ -654,7 +735,23 @@ def ord_unfold(tensor, mode):
     return unfolded[:,ord_idx]
 
 def ord_fold(ord_matrix, shape, mode):
-        
+    """Function that performs the mode fold operation of a target matrix to a 
+    tensor with the given shape. Correction of the fibers order applyied.
+    
+    Parameters:
+    -----------
+    target : [2-D array]
+        Mode unfolded matrix.
+    shape : [1-D array]
+        Tensor shape vector
+    mode : [scalar]
+        Selected mode.
+    
+    Returns:
+    --------
+    [n-D array]
+        Folded tensor.
+    """
     size = np.prod(shape)
     mshape = npy2math(shape)
     axes = math2npy(np.arange(len(shape)))
@@ -668,7 +765,7 @@ def ord_fold(ord_matrix, shape, mode):
     tensor = vector.reshape(mshape, order='F').transpose(axes)
     return tensor
 
-# TODO: doc
+
 def cp_decomp(tensor, rank, eps=1e-6, num_iter=500, init_svd=True, verb=False):
     """CANDECOMP/PARAFAC decomposition of a tensor(I_1 x ... x I_n) with 
     respect to rank R in a set of N factor matrices A_n (I_n x R) throug the 
@@ -686,6 +783,8 @@ def cp_decomp(tensor, rank, eps=1e-6, num_iter=500, init_svd=True, verb=False):
         by default 1e-6.
     num_iter : [int], optional
         Number of iterations considered in the ALS algorithm, by default 200.
+    init_svd : [bool], optional
+        Flag for HOSVD initialization of the factor matrices.
     verb : [bool], optional
         Flag for verbose and to return the errors, by default False.
 
@@ -768,73 +867,112 @@ def cpd_tensor(factor_mtx):
     return tensor
 
 # TODO: implement
-def tkpsvd(tensor, shapes, eps=1e-16):
-    # TODO: doc
+def tkpsvd(tensor, shapes):
+    # Perform the TKPSVD of a tensor into a d-number of shapes.
     # real tensor, math shapes
     def pd_input(tensor, shapes):
-        
+        # Reshape - Permute - Reshape (grouping indexes) process.
         deg = len(shapes)
-        order = len(shapes[0])
-        
+        ordr = len(shapes[0])
+    
         target = tensor_vec(tensor)
-        
-        shape1 = [shapes[i][j] for j in range(order) for i in range(deg)]
+        # 1st reshape    
+        shape1 = [shapes[i][j] for j in range(ordr) for i in range(deg)]
         reshaped = target.reshape(shape1, order='F')
-        
-        perm_idx = np.arange(len(shape1)).reshape(deg, order)
-        permutation = [perm_idx[i,j] for j in range(order) for i in range(deg)]
-
+        # Permutation
+        perm_idx = np.arange(len(shape1)).reshape(deg, ordr, order='F')
+        permutation = [perm_idx[i,j] for i in range(deg) for j in range(ordr)]
         permuted = reshaped.transpose(permutation)
-
+        # 2nd reshape
         aux = np.array(permuted.shape)
-        shape2 = [np.prod(aux[0 + order*i:order*(i + 1):1]) for i in range(deg)]
-
+        shape2 = [np.prod(aux[0 + ordr*i:ordr*(i + 1):1]) for i in range(deg)]
         pd_tensor = np.reshape(permuted, shape2, order='F')
-        
+        # Returned A_tilde degree-order tensor
         return pd_tensor.transpose(math2npy(np.arange(pd_tensor.ndim)))
 
     degree = len(shapes)
     order = len(shapes[0])
     target = pd_input(tensor, shapes)
     
-    # TODO: change to PARAFAC
-    core, matrices = hosvd(target)
-
-    # selected = core.transpose(npy2math(np.arange(core.ndim)))
-    selected = core
-
-    num_terms = core.ndim - 1 # d - 1, hosvd of d-order tensor 
+    # PD process- Changed to PARAFAC
+    num_terms = degree - 2
+    matrices = cp_decomp(target, rank=num_terms, eps=1e-16, 
+                                 num_iter=2000, init_svd=False)
+    # CP indexes, the j terms: 
     rank1_terms = np.tile(np.arange(num_terms), 
                           degree).reshape(num_terms, degree, order='F')
-    
-    # Storage:
-    sigma = np.zeros(num_terms)
-    sigmar = np.zeros(num_terms)
-
+    # Storing
     factors = [[None]*num_terms for i in range(degree)]
+    sigma = np.zeros(num_terms)
+    
     for j, select_term in enumerate(rank1_terms): 
-        # nroot(s[1,1,1,]) colum[d][:,1]
-        sigma[j] = np.power(np.abs(selected[tuple(select_term)]), 1/degree)
-        sigmar[j] = selected[tuple(select_term)] # real sigmas
+        # sigmas 1 taking the norm of the columns of the cpd factor matrices A
+        sigma[j] = 1
         for d in range(degree):
-            factors[d][j] = tensor_unvec(matrices[d][:, [select_term[d]]], 
-                                         shapes[d])
-    
-    # factors[::-1] for tkron
-    return sigma, sigmar, factors
+            column = matrices[d][:, [select_term[d]]]
+            sigma_d = np.linalg.norm(column) 
+            sigma[j] *= sigma_d
+            factors[d][j] = tensor_unvec(column/sigma_d, shapes[d])
 
-# TODO: doc
-def tkp_tensor(sigmas, factors, r=0, c=0):
+    # ------------------- USING HOSVD ------------------------------------------
+    # core, matrices = hosvd(target)
+
+    # # selected = core.transpose(npy2math(np.arange(core.ndim)))
+    # selected = core
+
+    # num_terms = core.ndim - 1 # d - 1, hosvd of d-order tensor 
+    # rank1_terms = np.tile(np.arange(num_terms), 
+    #                       degree).reshape(num_terms, degree, order='F')
     
-    num_terms = sigmas.size
-    num_factors = len(factors)
-    unpack = [[factors[d][j] for d in range(num_factors-r)] 
-                                 for j in range(num_terms-c)]
+    # # Storage:
+    # sigma = np.zeros(num_terms)
+    # sigmar = np.zeros(num_terms)
+
+    # factors = [[None]*num_terms for i in range(degree)]
+    # for j, select_term in enumerate(rank1_terms): 
+    #     # nroot(s[1,1,1,]) colum[d][:,1]
+    #     sigma[j] = np.power(np.abs(selected[tuple(select_term)]), 1/degree)
+    #     sigmar[j] = selected[tuple(select_term)] # real sigmas
+    #     for d in range(degree):
+    #         factors[d][j] = tensor_unvec(matrices[d][:, [select_term[d]]], 
+    #                                      shapes[d])
+    #---------------------------------------------------------------------------
+    return sigma, factors
+
+
+def tkp_tensor(sigmas, factors, num_terms=None, num_factors=None):
+    """Function to construct a N-order tensor following the TKPSVD 
+    decomposition model.
+
+    Parameters:
+    -----------
+    sigmas : [1-D array]
+        Kronecker singular values.
+    factors : [list]
+        List containing de j rank-1 factors for each degree-tensors.
+    num_terms : [int], optional
+        Selecting the number of sum terms, by default None.
+    num_factors : [int], optional
+        Selecting the number of d-tensor factors, by default None.
+
+    Returns:
+    --------
+    [2-D array, N-D array]
+        Shapes of each factor and the reconstructed tensor.
+    """
+    if num_terms is None:
+         num_terms = sigmas.size
     
-    shapes = np.array([unpack[0][d].shape for d in range(num_factors-r)])
+    if num_factors is None:
+         num_factors = len(factors)
+    # Unpacking the factors into j terms {j {d1, d2, ...,dn  }}
+    unpack = [[factors[d][j] for d in range(num_factors)] 
+                                 for j in range(num_terms)]
+    
+    shapes = np.array([unpack[0][d].shape for d in range(num_factors)])
     
     sum_rank1_terms = np.zeros(shapes.prod(axis=0))
-    for j in range(num_terms-c):
+    for j in range(num_terms):
         sum_rank1_terms += sigmas[j] * tensor_kron(*unpack[j][::-1])
     
     return shapes, sum_rank1_terms

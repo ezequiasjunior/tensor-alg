@@ -5,7 +5,7 @@
 # the Homeworks solutions.
 #-------------------------------------------------
 ## Author: Ezequias Júnior
-## Version: 0.3.0 -> Homeworks: 08
+## Version: 0.4.1 -> Homeworks: 09
 ## Email: ezequiasjunio@gmail.com
 ## Status: in development
 
@@ -17,18 +17,24 @@ from numpy.random import rand, randn
 from scipy.io import loadmat
 from bokeh.plotting import figure, output_notebook, show
 from bokeh.layouts import row
+from bokeh.palettes import colorblind
 from tqdm.notebook import tqdm, tnrange
 
 
 # Utility functions:
 def noise_std(snr, x, noise):
     # Calculates the noise standard dev. using equation 1
-    return norm(x, 'fro') / (np.sqrt(snr) * norm(noise, 'fro'))
+    if x.ndim > 2:
+        return tensoralg.tensor_norm(x) / (np.sqrt(snr) *\
+                                           tensoralg.tensor_norm(noise))
+    else:
+        return norm(x, 'fro') / (np.sqrt(snr) * norm(noise, 'fro'))
+
 
 def apply_noise(snr_db, x):
     # Checking if x is complex and generating noise matrix:
     if np.iscomplexobj(x):
-        noise = randn(x.shape[0], x.shape[1]*2).view(np.complex_)/np.sqrt(2)
+        noise = (randn(*x.shape) + 1j*randn(*x.shape))/np.sqrt(2)
     else: # real case:
         noise = randn(*x.shape)
     
@@ -46,7 +52,7 @@ def norm_mse(x, x_hat):
         return (norm(x_hat - x, 'fro') / norm(x, 'fro'))**2
 
 def plot_results(x, y, y2, label1, label2, method):
-    # Plotting results for homework 03 and 04 by generating a graph 
+    # Plotting results for the homeworks by generating a graph 
     # of SNR versus NMSE.
     # Figure properties:
     plot_log = figure(tools="hover, pan, wheel_zoom, box_zoom, reset", 
@@ -132,7 +138,7 @@ def run_simulation_lskron(snr_db, num_mc, param1, param2):
     # Returning the NMSE:
     return norm_square_error.mean(axis=0)
     
-# Simulation functions: HOMEWORKS 06, 07
+# Simulation functions: HOMEWORKS 06, 07 and 08
 def all_orth(core):
     # All orthogonality check for a 3rd-Order core tensor.
     k, i, j = core.shape
@@ -225,3 +231,100 @@ def run_simulation_lskron3d(snr_db, num_mc, shapes, flag=False):
             norm_square_error[realization, ids] = norm_mse(mt_x, x_hat)
     # Returning the NMSE:
     return norm_square_error.mean(axis=0)
+
+# Simulation functions: HOMEWORK 09
+def run_simulation_als(snr_db, num_mc, rows, rank, tol, it):
+    # Storing the results:
+    norm_square_error_a = np.zeros((num_mc, snr_db.size))
+    norm_square_error_b = np.zeros((num_mc, snr_db.size))
+    norm_square_error_c = np.zeros((num_mc, snr_db.size))
+    norm_square_error_x = np.zeros((num_mc, snr_db.size))
+    # Monte Carlo Simulation:
+    for realization in tnrange(num_mc):
+        # Generating matrices:
+        # mtx = [randn(i, rank*2).view(complex) for i in rows]
+        a = randn(rows[0], rank*2).view(complex)
+        b = randn(rows[1], rank*2).view(complex)
+        c = randn(rows[2], rank*2).view(complex)
+        mtx = [a, b, c]
+        # Tensor X_0:
+        tx = tensoralg.cpd_tensor(mtx)
+        for ids, snr in enumerate(snr_db):
+            # Applying noise to the tensor X_0:
+            tx_noise = apply_noise(snr, tx)
+            # Estimating factor matrices:            
+            mtx_hat = tensoralg.cp_decomp(tx_noise, rank, 
+                                          eps=tol, num_iter=it)
+            # Constructing tensor X_hat:
+            tx_hat = tensoralg.cpd_tensor(mtx_hat)
+            # Calculating the normalized error:
+            norm_square_error_x[realization, ids] = norm_mse(tx,tx_hat)
+            norm_square_error_a[realization, ids] = norm_mse(mtx[0],mtx_hat[0])
+            norm_square_error_b[realization, ids] = norm_mse(mtx[1],mtx_hat[1])
+            norm_square_error_c[realization, ids] = norm_mse(mtx[2],mtx_hat[2])
+    # Retruning results:
+    results = [norm_square_error_a.mean(axis=0), 
+               norm_square_error_b.mean(axis=0), 
+               norm_square_error_c.mean(axis=0), 
+               norm_square_error_x.mean(axis=0)]
+    
+    return results 
+
+def plot_error(als_error):
+    # Plotting results for the homework 9 by generating a graph 
+    # of number of iteractions versus the ALS error.    
+    colors = colorblind['Colorblind'][7]
+    plot_log = figure(tools="hover, pan, wheel_zoom, box_zoom, reset", 
+                 plot_width=500, plot_height=400,
+                 background_fill_color="#fafafa",
+                 x_axis_label='Iteractions',
+                 y_axis_label='Error',
+                 y_axis_type='log',
+                 title='Error Curve - ALS')
+    x = np.arange(als_error.size) + 1
+    y = als_error.ravel()
+    plot_log.line(x, y, line_width=2, color=colors[0], 
+                                      legend='Error - ALS')
+
+    plot_log.legend.location = "top_right"
+    show(plot_log)
+    pass
+
+def plot_results_als(snr, results, method, labels):
+    # Plotting results for the homework 9 by generating a graph 
+    # of SNR versus NMSE.
+    # Figure properties:
+    colors = colorblind['Colorblind'][len(results)]
+    plot_log = figure(tools="hover, pan, wheel_zoom, box_zoom, reset", 
+                 plot_width=500, plot_height=400,
+                 background_fill_color="#fafafa",
+                 x_axis_label='SNR [dB]',
+                 y_axis_label='NMSE',
+                 y_axis_type='log',
+                 title=f'Normalized Error Curves - {method} - Log')
+    # Curves: Log sacle
+    for i, result in enumerate(results):
+        plot_log.line(snr, result, line_width=2, color=colors[i], 
+                                      legend=f'{method} - {labels[i]}')
+        plot_log.square(snr, result, size=8, color=colors[i], fill_color=None, 
+                                           legend=f'{method} - {labels[i]}')
+    plot_log.legend.location = "top_right"
+    plot_log.legend.click_policy = "hide"
+    # Linear scale:
+    plot_lin = figure(tools="hover, pan, wheel_zoom, box_zoom, reset", 
+                 plot_width=500, plot_height=400, 
+                 background_fill_color="#fafafa",
+                 x_axis_label='SNR [dB]',
+                 y_axis_label='NMSE',
+                 title=f'Normalized Error Curves - {method} - Linear')
+    # Curves: Log sacle
+    for i, result in enumerate(results):
+        plot_lin.line(snr, result, line_width=2, color=colors[i], 
+                                      legend=f'{method} - {labels[i]}')
+        plot_lin.square(snr, result, size=8, color=colors[i], fill_color=None, 
+                                           legend=f'{method} - {labels[i]}')
+    plot_lin.legend.location = "top_right"
+    plot_lin.legend.click_policy = "hide"
+
+    show(row(plot_lin, plot_log))
+    pass
