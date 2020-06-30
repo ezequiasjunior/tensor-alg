@@ -7,7 +7,7 @@
 # toolbox.
 #-------------------------------------------------
 ## Author: Ezequias Júnior
-## Version: 1.0.1
+## Version: 1.0.2
 ## Email: ezequiasjunio@gmail.com
 ## Status: in development.
 
@@ -186,7 +186,7 @@ def m_mode_prod_shape(tensor, matrix, mode):
     ord_shape[mode - 1] = matrix.shape[0]
     # Returning the new shape in Numpy order
     return np.hstack([ord_shape[2:][::-1], ord_shape[:2]])
-
+    
 
 def tensor_norm(tensor):
     """Calculates the tensor norm by taking the square root of the 
@@ -529,7 +529,8 @@ def m_mode_prod(tensor, mt_list, mode_list=None):
         new_shape = m_mode_prod_shape(result, matrix, mode)
         result = fold(matrix @ unfold(result, mode), new_shape, mode)
     # Returning the resultant tensor:
-    return result
+    rshape = np.array(result.shape) # Fix: considering vector n mode product.
+    return result.reshape(rshape[rshape > 1])
 
 
 def tensor_kron(*args):
